@@ -1,168 +1,156 @@
-// AnimeKai Extension for Mangayomi
-// Source: https://animekai.to
-// itemType: 1 (anime)
-
-const baseUrl = source.baseUrl; // https://animekai.to
-
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-function buildHeaders() {
-  return {
-    "Referer": baseUrl + "/",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-  };
-}
-
-function parseSearchResults(html) {
-  const items = [];
-  const regex = /<div class="film-detail"[\s\S]*?<a[^>]+href="([^"]+)"[^>]*title="([^"]+)"[\s\S]*?<img[^>]+(?:src|data-src)="([^"]+)"/g;
-  let m;
-  while ((m = regex.exec(html)) !== null) {
-    items.push({
-      name: m[2].trim(),
-      link: m[1].startsWith("http") ? m[1] : baseUrl + m[1],
-      imageUrl: m[3].startsWith("http") ? m[3] : baseUrl + m[3]
-    });
+const mangayomiSources = [
+  {
+    "name": "AnimeKai",
+    "lang": "en",
+    "id": 1873640291,
+    "baseUrl": "https://animekai.to",
+    "apiUrl": "",
+    "iconUrl": "https://www.google.com/s2/favicons?sz=256&domain=https://animekai.to/",
+    "typeSource": "single",
+    "itemType": 1,
+    "version": "1.0.1",
+    "pkgPath": "animekai.js"
   }
-  return items;
-}
+];
 
-// ─── Extension Entry Points ──────────────────────────────────────────────────
-
-async function getPopular(page) {
-  const url = `${baseUrl}/home?page=${page}`;
-  const res = await fetch(url, { headers: buildHeaders() });
-  const html = await res.text();
-
-  const items = parseSearchResults(html);
-  // Try to detect if there's a next page
-  const hasNext = html.includes('class="page-next"') || html.includes('rel="next"');
-
-  return {
-    list: items,
-    hasNextPage: hasNext
-  };
-}
-
-async function getLatestUpdates(page) {
-  const url = `${baseUrl}/latest?page=${page}`;
-  const res = await fetch(url, { headers: buildHeaders() });
-  const html = await res.text();
-
-  const items = parseSearchResults(html);
-  const hasNext = html.includes('class="page-next"') || html.includes('rel="next"');
-
-  return {
-    list: items,
-    hasNextPage: hasNext
-  };
-}
-
-async function search(query, page, filters) {
-  const url = `${baseUrl}/search?keyword=${encodeURIComponent(query)}&page=${page}`;
-  const res = await fetch(url, { headers: buildHeaders() });
-  const html = await res.text();
-
-  const items = parseSearchResults(html);
-  const hasNext = html.includes('class="page-next"') || html.includes('rel="next"');
-
-  return {
-    list: items,
-    hasNextPage: hasNext
-  };
-}
-
-async function getDetail(url) {
-  const res = await fetch(url, { headers: buildHeaders() });
-  const html = await res.text();
-
-  // Title
-  const titleMatch = html.match(/<h2[^>]*class="[^"]*film-name[^"]*"[^>]*>([^<]+)<\/h2>/);
-  const name = titleMatch ? titleMatch[1].trim() : "";
-
-  // Description
-  const descMatch = html.match(/<div[^>]*class="[^"]*film-description[^"]*"[^>]*>([\s\S]*?)<\/div>/);
-  const desc = descMatch ? descMatch[1].replace(/<[^>]+>/g, "").trim() : "";
-
-  // Thumbnail
-  const imgMatch = html.match(/<img[^>]+class="[^"]*film-poster[^"]*"[^>]+(?:src|data-src)="([^"]+)"/);
-  const imageUrl = imgMatch ? imgMatch[1] : "";
-
-  // Genres
-  const genreRegex = /<a[^>]+href="[^"]*\/genre\/[^"]*"[^>]*>([^<]+)<\/a>/g;
-  const genres = [];
-  let gm;
-  while ((gm = genreRegex.exec(html)) !== null) {
-    genres.push(gm[1].trim());
+class DefaultExtension extends MProvider {
+  constructor() {
+    super();
+    this.client = new Client();
   }
 
-  // Status
-  const statusMatch = html.match(/Status[\s\S]*?<span[^>]*>([^<]+)<\/span>/);
-  const statusText = statusMatch ? statusMatch[1].trim().toLowerCase() : "";
-  const status = statusText.includes("finish") || statusText.includes("complet") ? 1 : 0;
+  getHeaders() {
+    return {
+      "Referer": this.source.baseUrl + "/",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    };
+  }
 
-  // Episodes – AnimeKai uses a data-id on the detail page to load episodes via XHR
-  const idMatch = html.match(/data-id="([^"]+)"/);
-  const animeId = idMatch ? idMatch[1] : "";
+  async requestDoc(url) {
+    const res = await this.client.get(url, this.getHeaders());
+    return new Document(res.body);
+  }
 
-  const episodes = [];
-  if (animeId) {
-    const epRes = await fetch(`${baseUrl}/ajax/episode/list/${animeId}`, { headers: buildHeaders() });
-    const epData = await epRes.json();
-    const epHtml = epData.html || "";
+  async requestText(url) {
+    const res = await this.client.get(url, this.getHeaders());
+    return res.body;
+  }
 
-    const epRegex = /<a[^>]+data-id="(\d+)"[^>]+title="([^"]+)"[^>]*>/g;
-    let em;
-    let epNum = 1;
-    while ((em = epRegex.exec(epHtml)) !== null) {
-      episodes.push({
-        name: em[2].trim(),
-        url: `${baseUrl}/ajax/episode/sources?id=${em[1]}`,
-        dateUpload: null,
-        epNum: epNum++
-      });
+  async requestJson(url) {
+    const res = await this.client.get(url, this.getHeaders());
+    return JSON.parse(res.body);
+  }
+
+  parseAnimeList(doc) {
+    const list = [];
+    const items = doc.select(".flw-item");
+    for (const item of items) {
+      const a = item.selectFirst(".film-name a");
+      const img = item.selectFirst(".film-poster img");
+      if (!a) continue;
+      const name = a.text.trim();
+      const link = this.source.baseUrl + a.getHref;
+      const imageUrl = img ? (img.attr("data-src") || img.getSrc) : "";
+      list.push({ name, imageUrl, link });
     }
+    return list;
   }
 
-  return {
-    name,
-    imageUrl,
-    description: desc,
-    genres,
-    status,
-    episodes
-  };
-}
-
-async function getVideoList(episodeUrl) {
-  const res = await fetch(episodeUrl, { headers: buildHeaders() });
-  const data = await res.json();
-
-  const videos = [];
-
-  // data.link is typically the direct embed or HLS url
-  if (data && data.link) {
-    videos.push({
-      url: data.link,
-      originalUrl: data.link,
-      quality: "Default"
-    });
+  async getPopular(page) {
+    const url = `${this.source.baseUrl}/top-airing?page=${page}`;
+    const doc = await this.requestDoc(url);
+    const list = this.parseAnimeList(doc);
+    const hasNextPage = doc.selectFirst(".page-item.active + .page-item") !== null;
+    return { list, hasNextPage };
   }
 
-  // Some responses return a sources array
-  if (data && Array.isArray(data.sources)) {
-    for (const src of data.sources) {
-      videos.push({
-        url: src.file || src.url,
-        originalUrl: src.file || src.url,
-        quality: src.label || src.quality || "Auto"
-      });
+  get supportsLatest() {
+    return true;
+  }
+
+  async getLatestUpdates(page) {
+    const url = `${this.source.baseUrl}/recently-updated?page=${page}`;
+    const doc = await this.requestDoc(url);
+    const list = this.parseAnimeList(doc);
+    const hasNextPage = doc.selectFirst(".page-item.active + .page-item") !== null;
+    return { list, hasNextPage };
+  }
+
+  async search(query, page, filters) {
+    const url = `${this.source.baseUrl}/search?keyword=${encodeURIComponent(query)}&page=${page}`;
+    const doc = await this.requestDoc(url);
+    const list = this.parseAnimeList(doc);
+    const hasNextPage = doc.selectFirst(".page-item.active + .page-item") !== null;
+    return { list, hasNextPage };
+  }
+
+  async getDetail(url) {
+    const doc = await this.requestDoc(url);
+
+    const name = doc.selectFirst(".film-name") ? doc.selectFirst(".film-name").text.trim() : "";
+    const description = doc.selectFirst(".film-description .text") ? doc.selectFirst(".film-description .text").text.trim() : "";
+    const imageUrl = doc.selectFirst(".film-poster img") ? doc.selectFirst(".film-poster img").attr("src") : "";
+
+    const genreEls = doc.select(".item-list a[href*='/genre/']");
+    const genre = genreEls.map(el => el.text.trim());
+
+    const statusEl = doc.selectFirst(".item-title:contains('Status') .name");
+    const statusText = statusEl ? statusEl.text.trim().toLowerCase() : "";
+    const status = statusText.includes("finish") || statusText.includes("complet") ? 1 : 0;
+
+    const animeIdEl = doc.selectFirst("#anime-id");
+    const dataIdEl = doc.selectFirst("[data-id]");
+    const animeId = animeIdEl ? animeIdEl.attr("value") : (dataIdEl ? dataIdEl.attr("data-id") : "");
+
+    const chapters = [];
+    if (animeId) {
+      try {
+        const epData = await this.requestJson(
+          `${this.source.baseUrl}/ajax/episode/list/${animeId}`
+        );
+        const epHtml = epData.html || epData.result || "";
+        const epDoc = new Document(epHtml);
+        const epItems = epDoc.select("a[data-id]");
+        let epNum = 1;
+        for (const ep of epItems) {
+          const epId = ep.attr("data-id");
+          const epTitle = ep.attr("title") || ep.text.trim() || ("Episode " + epNum);
+          chapters.push({
+            name: epTitle,
+            url: `${this.source.baseUrl}/ajax/episode/sources?id=${epId}`,
+            scanlator: ""
+          });
+          epNum++;
+        }
+      } catch (e) {}
     }
+
+    return { name, description, status, genre, imageUrl, chapters, link: url };
   }
 
-  return videos;
-}
+  async getVideoList(url) {
+    const videos = [];
+    try {
+      const data = await this.requestJson(url);
+      if (data.link) {
+        videos.push({ url: data.link, originalUrl: data.link, quality: "Default" });
+      }
+      if (Array.isArray(data.sources)) {
+        for (const src of data.sources) {
+          const videoUrl = src.file || src.url || "";
+          if (videoUrl) {
+            videos.push({ url: videoUrl, originalUrl: videoUrl, quality: src.label || src.quality || "Auto" });
+          }
+        }
+      }
+      if (data.result && typeof data.result === "object" && data.result.link) {
+        videos.push({ url: data.result.link, originalUrl: data.result.link, quality: "Default" });
+      }
+    } catch (e) {}
+    return videos;
+  }
 
-async function getFilterList() {
-  return [];
+  getSourcePreferences() {
+    return [];
+  }
 }
