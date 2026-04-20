@@ -10,7 +10,7 @@
     "dateFormatLocale": "",
     "isNsfw": false,
     "hasCloudflare": false,
-    "sourceCodeUrl": "https://raw.githubusercontent.com/Nerd234132/mangayomi-animekai-repo/main/javascript/anime/src/en/animekai.json",
+    "sourceCodeUrl": "https://raw.githubusercontent.com/Nerd234132/mangayomi-animekai-repo-/main/javascript/anime/src/en/animekai.js",
     "apiUrl": "",
     "version": "1.0.0",
     "isManga": false,
